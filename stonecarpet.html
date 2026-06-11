@@ -101,6 +101,54 @@ function App() {
   const [newOrder, setNewOrder] = useState(Object.fromEntries(STONES.map(s=>[s.sku,0])));
   const [editMode, setEditMode] = useState(false);
   const [editData, setEditData] = useState(null);
+  const [scanState, setScanState] = useState("idle");
+  const [scanResult, setScanResult] = useState(null);
+  const [scanError, setScanError] = useState("");
+  const [lastUpdated, setLastUpdated] = useState("27/5-2026");
+
+  const scanScreenshot = async (file) => {
+    setScanState("scanning");
+    setScanError("");
+    try {
+      const base64 = await new Promise((res, rej) => {
+        const r = new FileReader();
+        r.onload = () => res(r.result.split(",")[1]);
+        r.onerror = rej;
+        r.readAsDataURL(file);
+      });
+      const resp = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 1000,
+          messages: [{ role: "user", content: [
+            { type: "image", source: { type: "base64", media_type: file.type, data: base64 } },
+            { type: "text", text: "Dette er et WMS lagerstatus screenshot. Returner KUN et JSON objekt uden markdown i dette format:\n{\"dato\":\"DD/MM-YYYY\",\"sten\":{\"BGS-NeroEbano\":{\"lager\":0,\"reserv\":0,\"paavej\":0,\"salg1\":0,\"salg3\":0},\"BGS-Botticino\":{\"lager\":0,\"reserv\":0,\"paavej\":0,\"salg1\":0,\"salg3\":0},\"BGS-GrigioCarnico\":{\"lager\":0,\"reserv\":0,\"paavej\":0,\"salg1\":0,\"salg3\":0},\"BGS-Arabescato\":{\"lager\":0,\"reserv\":0,\"paavej\":0,\"salg1\":0,\"salg3\":0},\"BGS-GrigioPlatino\":{\"lager\":0,\"reserv\":0,\"paavej\":0,\"salg1\":0,\"salg3\":0},\"BGS-BrownRoyal\":{\"lager\":0,\"reserv\":0,\"paavej\":0,\"salg1\":0,\"salg3\":0},\"BGS-Bardiglio\":{\"lager\":0,\"reserv\":0,\"paavej\":0,\"salg1\":0,\"salg3\":0},\"BGS-BiancoCarrara\":{\"lager\":0,\"reserv\":0,\"paavej\":0,\"salg1\":0,\"salg3\":0}}}\nMatch SKU pa produktnavn. Kolonner: Lager, Reservationer, Pa vej, 1 maaned, 3 maaned. Salgsbare=lager-reserv. Brug 0 hvis sten ikke er pa screenshottet." }
+          ]}]
+        })
+      });
+      const json = await resp.json();
+      const text = json.content?.[0]?.text || "";
+      const parsed = JSON.parse(text.replace(/```json|```/g,"").trim());
+      setScanResult(parsed);
+      setScanState("preview");
+    } catch(e) {
+      setScanError("Fejl: " + e.message);
+      setScanState("error");
+    }
+  };
+
+  const applyScan = () => {
+    if (!scanResult?.sten) return;
+    const nd = {...data};
+    Object.entries(scanResult.sten).forEach(([sku,vals]) => { if(nd[sku]) nd[sku]={...nd[sku],...vals}; });
+    setData(nd);
+    setLastUpdated("Screenshot " + (scanResult.dato || new Date().toLocaleDateString("da-DK")));
+    setScanState("idle");
+    setScanResult(null);
+    setTab("pipeline");
+  };
 
   const [orders] = useState([
     { ref:"2852byM", sent:"2026-05-27", etaFactory:null, etaWarehouse:null, status:"afventer",
@@ -174,10 +222,10 @@ function App() {
           <div style={{fontSize:11,letterSpacing:2,textTransform:"uppercase",color:"#a09070",marginBottom:4}}>Urban-Hald · Bellamoli · ROKO</div>
           <div style={{fontSize:26,fontWeight:800,color:"#2c2010",letterSpacing:-0.5}}>StoneCarpet Pipeline</div>
         </div>
-        <div style={{fontSize:11,color:"#b0a090",paddingTop:4}}>27/5-2026</div>
+        <div style={{fontSize:11,color:"#b0a090",paddingTop:4}}>{lastUpdated}</div>
       </div>
       <div className="tabs">
-        {[["pipeline","📦 Sten"],["order","🛒 Bestil"],["orders","🚚 På vej"],["roko","🧴 ROKO"]].map(([id,label])=>
+        {[["pipeline","📦 Sten"],["order","🛒 Bestil"],["orders","🚚 På vej"],["roko","🧴 ROKO"],["scan","📷 Scan"]].map(([id,label])=>
           <button key={id} className={`tab${tab===id?" active":""}`} onClick={()=>setTab(id)}>{label}</button>
         )}
       </div>
@@ -457,6 +505,63 @@ function App() {
             </div>
           </div>
         )}
+      </div>
+    </div>}
+
+    {/* SCAN */}
+    {tab==="scan" && <div>
+      <div className="card" style={{marginBottom:16}}>
+        <div className="card-pad">
+          <div style={{fontSize:20,fontWeight:800,marginBottom:6}}>📷 Scan lagerstatus</div>
+          <div style={{fontSize:14,color:"#8a7060",marginBottom:16}}>Upload et screenshot fra dit WMS — Claude læser tallene automatisk og opdaterer appen.</div>
+
+          {scanState==="idle" && <label style={{display:"block",border:"2px dashed #d8ccc0",borderRadius:12,padding:"32px 20px",textAlign:"center",cursor:"pointer",background:"#f5ede0"}}>
+            <div style={{fontSize:32,marginBottom:8}}>📂</div>
+            <div style={{fontWeight:600,color:"#6a5a40",marginBottom:4}}>Klik for at vælge screenshot</div>
+            <div style={{fontSize:12,color:"#a09070"}}>PNG, JPG eller WEBP</div>
+            <input type="file" accept="image/*" style={{display:"none"}} onChange={e=>e.target.files[0]&&scanScreenshot(e.target.files[0])}/>
+          </label>}
+
+          {scanState==="scanning" && <div style={{textAlign:"center",padding:"40px 20px"}}>
+            <div style={{fontSize:32,marginBottom:12}}>⏳</div>
+            <div style={{fontWeight:600,fontSize:16}}>Læser screenshot...</div>
+            <div style={{fontSize:13,color:"#a09070",marginTop:4}}>Claude analyserer tallene</div>
+          </div>}
+
+          {scanState==="error" && <div>
+            <div style={{background:"#fef2f2",border:"1px solid #fca5a5",borderRadius:10,padding:"14px 16px",marginBottom:12,color:"#dc2626"}}>{scanError}</div>
+            <button className="btn btn-secondary" onClick={()=>setScanState("idle")}>Prøv igen</button>
+          </div>}
+
+          {scanState==="preview" && scanResult && <div>
+            <div style={{background:"#f0faf0",border:"1px solid #bbdebb",borderRadius:10,padding:"12px 16px",marginBottom:14}}>
+              <div style={{fontWeight:700,color:"#16a34a",marginBottom:2}}>✓ Screenshot læst</div>
+              <div style={{fontSize:13,color:"#6a8060"}}>Genkendt dato: {scanResult.dato || "ukendt"}</div>
+            </div>
+            <div style={{marginBottom:14}}>
+              {Object.entries(scanResult.sten||{}).map(([sku,vals])=>{
+                const stone = STONES.find(s=>s.sku===sku);
+                if (!stone) return null;
+                return <div key={sku} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderBottom:"1px solid #ede4d6",fontSize:14}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8}}>
+                    <div style={{width:10,height:10,borderRadius:2,background:stone.color}}/>
+                    <span style={{fontWeight:600}}>{stone.name}</span>
+                  </div>
+                  <div style={{display:"flex",gap:12,fontSize:12,color:"#8a7060"}}>
+                    <span>Lager: <strong style={{color:"#2c2010"}}>{vals.lager}</strong></span>
+                    <span>På vej: <strong style={{color:"#8b6040"}}>{vals.paavej}</strong></span>
+                    <span>1 mdr: <strong style={{color:"#2c2010"}}>{vals.salg1}</strong></span>
+                    <span>3 mdr: <strong style={{color:"#2c2010"}}>{vals.salg3}</strong></span>
+                  </div>
+                </div>;
+              })}
+            </div>
+            <div style={{display:"flex",gap:10}}>
+              <button className="btn btn-secondary" style={{flex:1}} onClick={()=>{setScanState("idle");setScanResult(null);}}>Annuller</button>
+              <button className="btn btn-primary" style={{flex:2}} onClick={applyScan}>✓ Opdater lagerdata</button>
+            </div>
+          </div>}
+        </div>
       </div>
     </div>}
 
