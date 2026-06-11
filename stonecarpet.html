@@ -573,3 +573,578 @@ ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
 </script>
 </body>
 </html>
+<!DOCTYPE html>
+<html lang="da">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>StoneCarpet Pipeline</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #f2ebe0; color: #2c2010; font-family: -apple-system, 'SF Pro Display', 'Segoe UI', sans-serif; font-size: 15px; }
+input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; }
+input[type=number] { -moz-appearance: textfield; }
+.card { background: #fffcf7; border-radius: 16px; border: 1px solid #e0d5c5; overflow: hidden; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+.card-pad { padding: 16px 20px; }
+.label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.8px; color: #a09070; font-weight: 600; margin-bottom: 4px; }
+.tabs { display: flex; background: #ede4d6; border-radius: 12px; padding: 3px; gap: 3px; margin: 0 16px 16px; }
+.tab { flex: 1; padding: 9px 4px; border: none; cursor: pointer; font-size: 13px; font-weight: 600; background: transparent; border-radius: 9px; color: #a09070; transition: all 0.15s; }
+.tab.active { background: #fffcf7; color: #2c2010; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+.stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 12px 0; }
+.stat-box { background: #f5ede0; border-radius: 10px; padding: 10px 12px; }
+.stat-val { font-size: 20px; font-weight: 700; color: #2c2010; }
+.stat-sub { font-size: 11px; color: #a09070; margin-top: 1px; }
+.bar-wrap { height: 7px; background: #e8ddd0; border-radius: 4px; overflow: hidden; }
+.bar-fill { height: 100%; border-radius: 4px; transition: width 0.3s; }
+.badge { display: inline-block; font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 20px; }
+.btn { padding: 12px 20px; border-radius: 12px; border: none; cursor: pointer; font-size: 14px; font-weight: 600; }
+.btn-primary { background: linear-gradient(135deg, #8b6040, #6b4820); color: #fff; }
+.btn-secondary { background: #ede4d6; color: #8a7060; border: 1px solid #d8ccc0; }
+.btn-green { background: #22c55e; color: #fff; }
+.divider { height: 1px; background: #ede4d6; margin: 0; }
+@media (min-width: 600px) {
+  .stat-grid { grid-template-columns: repeat(4, 1fr); }
+  .stone-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+  .order-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+}
+@media (min-width: 900px) {
+  .stone-grid { grid-template-columns: repeat(3, 1fr); }
+  .order-grid { grid-template-columns: repeat(2, 1fr); }
+}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useMemo } = React;
+
+const STONES = [
+  { sku: "BGS-NeroEbano",     name: "Nero Ebano",     color: "#2a2a2a" },
+  { sku: "BGS-Botticino",     name: "Botticino",      color: "#c8a87a" },
+  { sku: "BGS-GrigioCarnico", name: "Grigio Carnico", color: "#808080" },
+  { sku: "BGS-Arabescato",    name: "Arabescato",     color: "#b09080" },
+  { sku: "BGS-GrigioPlatino", name: "Grigio Platino", color: "#98a8b4" },
+  { sku: "BGS-BrownRoyal",    name: "Brown Royal",    color: "#8b6040" },
+  { sku: "BGS-Bardiglio",     name: "Bardiglio",      color: "#5a6575" },
+  { sku: "BGS-BiancoCarrara", name: "Bianco Carrara", color: "#c8c4c0" },
+];
+const ROKO = [
+  { sku: "ROKO-RK866",     name: "AKRYL 1K Filler",      color: "#d4a830" },
+  { sku: "ROKO-RK863",     name: "PAS Binder",            color: "#4090c0" },
+  { sku: "ROKO-RK865-WP",  name: "WALL PAS Binder",      color: "#50a070" },
+  { sku: "ROKO-RK877",     name: "WALL AKRYL 1K Binder", color: "#9060a0" },
+  { sku: "ROKO-RK867",     name: "PU 1K Binder",         color: "#d07030" },
+  { sku: "ROKO-GW8-RK814", name: "GW 8 Primer",          color: "#4080a0" },
+];
+
+const PALLES = 40, LEADTIME = 32;
+const dækColor = v => v < 1.5 ? "#dc2626" : v < 2.5 ? "#ea580c" : v > 8 ? "#2563eb" : "#16a34a";
+const hasterColor = { nu: "#dc2626", snart: "#ea580c", ok: "#d97706", god: "#a09070" };
+const rankColors = ["#c87820", "#8a7560", "#a05a28"];
+
+function addDays(str, d) {
+  const dt = new Date(str); dt.setDate(dt.getDate() + d);
+  return dt.toLocaleDateString("da-DK", { day:"numeric", month:"short" });
+}
+function fmt(str) { return new Date(str).toLocaleDateString("da-DK", { day:"numeric", month:"short" }); }
+
+function calcFields(d, todayStr) {
+  const salgsbare = d.lager - d.reserv;
+  const totalAvail = salgsbare + d.paavej;
+  const dagligTiming = (d.salg3 / 3) / 30;
+  const dækning = d.salg1 > 0 ? totalAvail / d.salg1 : 99;
+  const dageUdsolgt = dagligTiming > 0 ? totalAvail / dagligTiming : 9999;
+  const bestilDage = Math.round(dageUdsolgt - LEADTIME - 30);
+  const bestilDato = bestilDage <= 0 ? "NU" : addDays(todayStr, bestilDage);
+  const haster = bestilDage <= 0 ? "nu" : bestilDage <= 7 ? "snart" : bestilDage <= 21 ? "ok" : "god";
+  return { salgsbare, totalAvail, dækning, bestilDage, bestilDato, haster };
+}
+
+function DækBar({ value }) {
+  const color = dækColor(value);
+  return <div className="bar-wrap" style={{marginTop:6}}>
+    <div className="bar-fill" style={{width:`${Math.min(100,(value/6)*100)}%`, background:color}}/>
+  </div>;
+}
+
+function App() {
+  const todayStr = new Date().toISOString().split("T")[0];
+  const [tab, setTab] = useState("pipeline");
+  const [newOrder, setNewOrder] = useState(Object.fromEntries(STONES.map(s=>[s.sku,0])));
+  const [editMode, setEditMode] = useState(false);
+  const [editData, setEditData] = useState(null);
+  const [scanState, setScanState] = useState("idle");
+  const [scanResult, setScanResult] = useState(null);
+  const [scanError, setScanError] = useState("");
+  const [lastUpdated, setLastUpdated] = useState("27/5-2026");
+
+  const scanScreenshot = async (file) => {
+    setScanState("scanning");
+    setScanError("");
+    try {
+      const base64 = await new Promise((res, rej) => {
+        const r = new FileReader();
+        r.onload = () => res(r.result.split(",")[1]);
+        r.onerror = rej;
+        r.readAsDataURL(file);
+      });
+      const resp = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 1000,
+          messages: [{ role: "user", content: [
+            { type: "image", source: { type: "base64", media_type: file.type, data: base64 } },
+            { type: "text", text: "Dette er et WMS lagerstatus screenshot. Returner KUN et JSON objekt uden markdown i dette format:\n{\"dato\":\"DD/MM-YYYY\",\"sten\":{\"BGS-NeroEbano\":{\"lager\":0,\"reserv\":0,\"paavej\":0,\"salg1\":0,\"salg3\":0},\"BGS-Botticino\":{\"lager\":0,\"reserv\":0,\"paavej\":0,\"salg1\":0,\"salg3\":0},\"BGS-GrigioCarnico\":{\"lager\":0,\"reserv\":0,\"paavej\":0,\"salg1\":0,\"salg3\":0},\"BGS-Arabescato\":{\"lager\":0,\"reserv\":0,\"paavej\":0,\"salg1\":0,\"salg3\":0},\"BGS-GrigioPlatino\":{\"lager\":0,\"reserv\":0,\"paavej\":0,\"salg1\":0,\"salg3\":0},\"BGS-BrownRoyal\":{\"lager\":0,\"reserv\":0,\"paavej\":0,\"salg1\":0,\"salg3\":0},\"BGS-Bardiglio\":{\"lager\":0,\"reserv\":0,\"paavej\":0,\"salg1\":0,\"salg3\":0},\"BGS-BiancoCarrara\":{\"lager\":0,\"reserv\":0,\"paavej\":0,\"salg1\":0,\"salg3\":0}}}\nMatch SKU pa produktnavn. Kolonner: Lager, Reservationer, Pa vej, 1 maaned, 3 maaned. Salgsbare=lager-reserv. Brug 0 hvis sten ikke er pa screenshottet." }
+          ]}]
+        })
+      });
+      const json = await resp.json();
+      const text = json.content?.[0]?.text || "";
+      const parsed = JSON.parse(text.replace(/```json|```/g,"").trim());
+      setScanResult(parsed);
+      setScanState("preview");
+    } catch(e) {
+      setScanError("Fejl: " + e.message);
+      setScanState("error");
+    }
+  };
+
+  const applyScan = () => {
+    if (!scanResult?.sten) return;
+    const nd = {...data};
+    Object.entries(scanResult.sten).forEach(([sku,vals]) => { if(nd[sku]) nd[sku]={...nd[sku],...vals}; });
+    setData(nd);
+    setLastUpdated("Screenshot " + (scanResult.dato || new Date().toLocaleDateString("da-DK")));
+    setScanState("idle");
+    setScanResult(null);
+    setTab("pipeline");
+  };
+
+  const [orders] = useState([
+    { ref:"2852byM", sent:"2026-05-27", etaFactory:null, etaWarehouse:null, status:"afventer",
+      lines:[{name:"Brown Royal",poser:320},{name:"Grigio Platino",poser:120},{name:"Nero Ebano",poser:160},{name:"Botticino",poser:160},{name:"Grigio Carnico",poser:360}] },
+    { ref:"28437qc", sent:"2026-05-07", etaFactory:"2026-06-10", etaWarehouse:"2026-06-17", status:"bekræftet",
+      lines:[{name:"Brown Royal",poser:80},{name:"Grigio Platino",poser:120},{name:"Nero Ebano",poser:200},{name:"Botticino",poser:400},{name:"Grigio Carnico",poser:200},{name:"Arabescato",poser:120}] },
+  ]);
+
+  const [data, setData] = useState({
+    "BGS-NeroEbano":    {lager:302,reserv:0,paavej:360,salg1:159,salg3:356},
+    "BGS-Botticino":    {lager:233,reserv:0,paavej:560,salg1:169,salg3:403},
+    "BGS-GrigioCarnico":{lager:84, reserv:6,paavej:560,salg1:211,salg3:323},
+    "BGS-Arabescato":   {lager:288,reserv:0,paavej:120,salg1:84, salg3:225},
+    "BGS-GrigioPlatino":{lager:159,reserv:0,paavej:240,salg1:88, salg3:210},
+    "BGS-BrownRoyal":   {lager:8,  reserv:0,paavej:400,salg1:179,salg3:265},
+    "BGS-Bardiglio":    {lager:328,reserv:0,paavej:0,  salg1:77, salg3:156},
+    "BGS-BiancoCarrara":{lager:183,reserv:0,paavej:0,  salg1:14, salg3:39 },
+  });
+
+  const [rokoData] = useState({
+    "ROKO-RK866":    {lager:357, reserv:0,paavej:215,salg1:134,salg3:365,min:100,max:500},
+    "ROKO-RK863":    {lager:297, reserv:0,paavej:0,  salg1:6,  salg3:102,min:50, max:300},
+    "ROKO-RK865-WP": {lager:76,  reserv:0,paavej:0,  salg1:30, salg3:71, min:50, max:200},
+    "ROKO-RK877":    {lager:97,  reserv:0,paavej:0,  salg1:3,  salg3:8,  min:50, max:200},
+    "ROKO-RK867":    {lager:2566,reserv:0,paavej:23, salg1:607,salg3:2003,min:200,max:1500},
+    "ROKO-GW8-RK814":{lager:818, reserv:0,paavej:1,  salg1:118,salg3:369,min:100,max:500},
+  });
+
+  const computed = useMemo(() => STONES.map(s => ({
+    ...s, ...data[s.sku], ...calcFields(data[s.sku], todayStr), sig: data[s.sku].salg3/3
+  })), [data]);
+
+  const rokoComputed = useMemo(() => ROKO.map(p => {
+    const d = rokoData[p.sku];
+    const f = calcFields(d, todayStr);
+    const mål = Math.min(d.max, Math.max(d.min, Math.round((d.salg3/3)*3)));
+    return { ...p, ...d, ...f, bestilAntal: Math.max(0, mål - f.totalAvail) };
+  }), [rokoData]);
+
+  const autoSuggest = useMemo(() => {
+    const TOTAL=28, TP=TOTAL*PALLES;
+    const sugg = Object.fromEntries(STONES.map(s=>[s.sku,0]));
+    const active = computed.filter(s=>s.sig>0&&s.dækning<6);
+    if (!active.length) return sugg;
+    const tA = active.reduce((a,s)=>a+s.totalAvail,0);
+    const tS = active.reduce((a,s)=>a+s.sig,0);
+    const tm = (tA+TP)/tS;
+    const needs = active.map(s=>({sku:s.sku,n:Math.max(0,s.sig*tm-s.totalAvail)}));
+    const tN = needs.reduce((a,n)=>a+n.n,0);
+    const raw = needs.map(n=>({sku:n.sku,p:tN>0?(n.n/tN)*TP:0}));
+    raw.forEach(r=>{sugg[r.sku]=Math.floor(r.p/PALLES);});
+    let rem=TOTAL-Object.values(sugg).reduce((a,b)=>a+b,0);
+    [...raw].filter(r=>r.p>0).sort((a,b)=>(b.p%PALLES)-(a.p%PALLES)).forEach(r=>{if(rem>0){sugg[r.sku]++;rem--;}});
+    if(rem>0)[...computed].filter(s=>s.sig>0).sort((a,b)=>b.sig-a.sig).forEach(s=>{if(rem>0){sugg[s.sku]++;rem--;}});
+    const tot=Object.values(sugg).reduce((a,b)=>a+b,0);
+    if(tot!==TOTAL){const top=[...computed].sort((a,b)=>b.sig-a.sig)[0];sugg[top.sku]=Math.max(0,sugg[top.sku]+(TOTAL-tot));}
+    return sugg;
+  }, [computed]);
+
+  const totalPaller = useMemo(()=>Object.values(newOrder).reduce((a,b)=>a+b,0),[newOrder]);
+  const activeOrders = orders.filter(o=>o.status!=="modtaget");
+  const sortedStones = [...computed].sort((a,b)=>b.salg3-a.salg3);
+  const maxSalg3 = Math.max(...computed.map(s=>s.salg3));
+
+  return <div style={{maxWidth:960,margin:"0 auto",paddingBottom:60}}>
+
+    {/* Header */}
+    <div style={{background:"#ede4d6",padding:"20px 20px 0",marginBottom:16}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16}}>
+        <div>
+          <div style={{fontSize:11,letterSpacing:2,textTransform:"uppercase",color:"#a09070",marginBottom:4}}>Urban-Hald · Bellamoli · ROKO</div>
+          <div style={{fontSize:26,fontWeight:800,color:"#2c2010",letterSpacing:-0.5}}>StoneCarpet Pipeline</div>
+        </div>
+        <div style={{fontSize:11,color:"#b0a090",paddingTop:4}}>{lastUpdated}</div>
+      </div>
+      <div className="tabs">
+        {[["pipeline","📦 Sten"],["order","🛒 Bestil"],["orders","🚚 På vej"],["roko","🧴 ROKO"],["scan","📷 Scan"]].map(([id,label])=>
+          <button key={id} className={`tab${tab===id?" active":""}`} onClick={()=>setTab(id)}>{label}</button>
+        )}
+      </div>
+    </div>
+
+    <div style={{padding:"0 16px"}}>
+
+    {/* ── PIPELINE ── */}
+    {tab==="pipeline" && !editMode && <div>
+      {/* Banner */}
+      {(() => {
+        if (activeOrders.length > 0) {
+          const next = [...computed].sort((a,b)=>b.bestilDage-a.bestilDage)[0];
+          return <div style={{background:"#f0faf0",border:"1px solid #bbdebb",borderRadius:14,padding:"16px 20px",marginBottom:16}}>
+            <div style={{fontSize:11,textTransform:"uppercase",letterSpacing:1.5,color:"#16a34a",fontWeight:700,marginBottom:4}}>✓ Ordre på vej</div>
+            <div style={{fontSize:20,fontWeight:800,color:"#2c2010",marginBottom:4}}>{activeOrders.length} ordrer afgivet</div>
+            <div style={{fontSize:14,color:"#6a8060"}}>
+              Næste bestilling ca. <strong>{next.bestilDato}</strong>
+              {activeOrders.map(o=><span key={o.ref} style={{marginLeft:12,background:"#e0f0e0",padding:"2px 8px",borderRadius:8,fontSize:12}}>
+                {o.ref}: {o.etaWarehouse?fmt(o.etaWarehouse):"afventer"}
+              </span>)}
+            </div>
+          </div>;
+        }
+        const k = [...computed].sort((a,b)=>a.bestilDage-b.bestilDage)[0];
+        const c = k.haster==="nu"?"#dc2626":k.haster==="snart"?"#ea580c":"#d97706";
+        return <div style={{background:"#fff8f0",border:`1px solid ${c}80`,borderRadius:14,padding:"16px 20px",marginBottom:16}}>
+          <div style={{fontSize:11,textTransform:"uppercase",letterSpacing:1.5,color:c,fontWeight:700,marginBottom:4}}>Næste bestillingspunkt</div>
+          <div style={{fontSize:20,fontWeight:800,color:"#2c2010",marginBottom:4}}>
+            {k.bestilDage<=0?"⚠️ Bestil nu":`Bestil inden ${k.bestilDato}`}
+          </div>
+          <div style={{fontSize:14,color:"#8a7060"}}>Styres af {k.name} · Leadtime ~{LEADTIME} dage</div>
+        </div>;
+      })()}
+
+      <div className="stone-grid">
+        {sortedStones.map((s,i)=><div key={s.sku} className="card">
+          <div className="card-pad">
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+              <div style={{display:"flex",alignItems:"center",gap:10}}>
+                <div style={{width:14,height:14,borderRadius:4,background:s.color,border:"1px solid rgba(0,0,0,0.1)",flexShrink:0}}/>
+                <span style={{fontWeight:700,fontSize:17,color:"#2c2010"}}>{s.name}</span>
+                {i<3&&<span style={{fontSize:12,fontWeight:800,color:rankColors[i]}}>#{i+1}</span>}
+              </div>
+              <span style={{fontSize:13,fontWeight:700,color:hasterColor[s.haster],background:hasterColor[s.haster]+"15",padding:"3px 10px",borderRadius:8}}>{s.bestilDato}</span>
+            </div>
+            <div className="stat-grid">
+              {[["Lager",s.salgsbare],["På vej",s.paavej>0?"+"+s.paavej:"—"],["1 mdr",s.salg1],["3 mdr",s.salg3]].map(([l,v])=>
+                <div key={l} className="stat-box">
+                  <div className="label">{l}</div>
+                  <div className="stat-val" style={{color:l==="På vej"&&s.paavej>0?"#8b6040":"#2c2010"}}>{v}</div>
+                </div>
+              )}
+            </div>
+            <div style={{display:"flex",alignItems:"center",gap:12,marginTop:4}}>
+              <DækBar value={s.dækning}/>
+              <span style={{fontSize:14,fontWeight:700,color:dækColor(s.dækning),minWidth:60,textAlign:"right"}}>{s.dækning.toFixed(1)} mdr</span>
+            </div>
+          </div>
+        </div>)}
+      </div>
+
+      <button className="btn btn-secondary" style={{width:"100%",marginTop:4}} onClick={()=>{setEditData(JSON.parse(JSON.stringify(data)));setEditMode(true);}}>
+        ✏️ Opdater lagertal
+      </button>
+    </div>}
+
+    {/* ── EDIT ── */}
+    {tab==="pipeline" && editMode && <div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+        <div style={{fontSize:20,fontWeight:700}}>Opdater lagertal</div>
+        <div style={{display:"flex",gap:8}}>
+          <button className="btn btn-secondary" onClick={()=>setEditMode(false)}>Annuller</button>
+          <button className="btn btn-green" onClick={()=>{setData(editData);setEditMode(false);}}>Gem</button>
+        </div>
+      </div>
+      {STONES.map(stone=>{
+        const d=editData[stone.sku];
+        return <div key={stone.sku} className="card" style={{marginBottom:10}}>
+          <div className="card-pad">
+            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
+              <div style={{width:12,height:12,borderRadius:3,background:stone.color}}/>
+              <span style={{fontWeight:700,fontSize:16}}>{stone.name}</span>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10}}>
+              {[["lager","Lager"],["reserv","Reserv."],["paavej","På vej"],["salg1","1 mdr"],["salg3","3 mdr"]].map(([f,label])=>
+                <div key={f}>
+                  <div className="label">{label}</div>
+                  <input type="number" min="0" value={d[f]}
+                    onChange={e=>setEditData(p=>({...p,[stone.sku]:{...p[stone.sku],[f]:parseInt(e.target.value)||0}}))}
+                    style={{width:"100%",background:"#f5ede0",border:"1px solid #d8ccc0",color:"#2c2010",borderRadius:8,padding:"8px 10px",fontSize:15,fontWeight:600,marginTop:4}}/>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>;
+      })}
+    </div>}
+
+    {/* ── BESTILLING ── */}
+    {tab==="order" && <div>
+      <div style={{display:"flex",gap:10,marginBottom:16}}>
+        <button className="btn btn-secondary" style={{flex:1}} onClick={()=>setNewOrder(Object.fromEntries(STONES.map(s=>[s.sku,0])))}>✕ Nulstil</button>
+        <button className="btn btn-primary" style={{flex:2}} onClick={()=>setNewOrder(Object.fromEntries(STONES.map(s=>[s.sku,autoSuggest[s.sku]||0])))}>✨ Auto-forslag</button>
+      </div>
+
+      {/* Total */}
+      <div className="card" style={{marginBottom:16,border:`2px solid ${totalPaller===28?"#16a34a":totalPaller>28?"#dc2626":"#e0d5c5"}`}}>
+        <div className="card-pad" style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <div>
+            <div className="label">Total paller</div>
+            <div style={{fontSize:36,fontWeight:800,color:totalPaller===28?"#16a34a":totalPaller>28?"#dc2626":"#2c2010",lineHeight:1}}>{totalPaller}<span style={{fontSize:18,color:"#a09070",fontWeight:400}}>/28</span></div>
+          </div>
+          <div style={{textAlign:"right"}}>
+            <div style={{fontSize:15,fontWeight:600,color:"#6a5a40"}}>{totalPaller*PALLES*25/1000} tons</div>
+            <div style={{fontSize:13,color:"#a09070"}}>{totalPaller*PALLES} poser</div>
+            {totalPaller===28&&<div style={{color:"#16a34a",fontWeight:700,marginTop:4}}>✓ Fuld lastbil</div>}
+            {totalPaller>28&&<div style={{color:"#dc2626",fontWeight:700,marginTop:4}}>⚠ Over kapacitet</div>}
+            {totalPaller>0&&totalPaller<28&&<div style={{color:"#d97706",marginTop:4}}>{28-totalPaller} paller mangler</div>}
+          </div>
+        </div>
+      </div>
+
+      <div className="order-grid">
+        {sortedStones.map((s,i)=>{
+          const p=newOrder[s.sku]||0;
+          const nyPoser=p*PALLES;
+          const sig=s.salg3/3;
+          const dækEfter=sig>0?(s.totalAvail+nyPoser)/sig:99;
+          return <div key={s.sku} className="card">
+            <div className="card-pad">
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+                <div style={{display:"flex",alignItems:"center",gap:8}}>
+                  <div style={{width:13,height:13,borderRadius:3,background:s.color,border:"1px solid rgba(0,0,0,0.1)"}}/>
+                  <span style={{fontWeight:700,fontSize:16}}>{s.name}</span>
+                  {i<3&&<span style={{fontSize:11,fontWeight:800,color:rankColors[i]}}>#{i+1}</span>}
+                </div>
+                <div style={{textAlign:"right"}}>
+                  <div className="label">Dækning efter</div>
+                  <div style={{fontSize:15,fontWeight:700,color:dækColor(dækEfter)}}>{dækEfter.toFixed(1)} mdr</div>
+                </div>
+              </div>
+
+              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12,background:"#f5ede0",borderRadius:8,padding:"8px 10px"}}>
+                <span style={{fontSize:12,color:"#a09070",minWidth:36}}>3 mdr</span>
+                <div className="bar-wrap" style={{flex:1}}>
+                  <div className="bar-fill" style={{width:`${(s.salg3/maxSalg3)*100}%`,background:"linear-gradient(90deg,#8b6040,#c8906a)"}}/>
+                </div>
+                <span style={{fontSize:13,fontWeight:600,color:"#6a4a28",minWidth:30,textAlign:"right"}}>{s.salg3}</span>
+                <span style={{fontSize:11,color:"#b0a090"}}>1m:{s.salg1}</span>
+              </div>
+
+              <div style={{display:"flex",alignItems:"center",gap:12}}>
+                <button onClick={()=>setNewOrder(o=>({...o,[s.sku]:Math.max(0,p-1)}))}
+                  style={{width:40,height:40,border:"1px solid #d8ccc0",background:"#f5ede0",color:"#2c2010",borderRadius:10,cursor:"pointer",fontSize:20,lineHeight:1}}>−</button>
+                <div style={{flex:1,textAlign:"center"}}>
+                  <span style={{fontSize:28,fontWeight:800,color:p>0?"#2c2010":"#c0b09a"}}>{p}</span>
+                  <span style={{fontSize:14,color:"#a09070"}}> pal</span>
+                  {p>0&&<div style={{fontSize:12,color:"#8b6040",fontWeight:600}}>{p*PALLES} poser</div>}
+                </div>
+                <button onClick={()=>setNewOrder(o=>({...o,[s.sku]:p+1}))}
+                  style={{width:40,height:40,border:"1px solid #d8ccc0",background:"#f5ede0",color:"#2c2010",borderRadius:10,cursor:"pointer",fontSize:20,lineHeight:1}}>+</button>
+                {autoSuggest[s.sku]>0&&<span style={{fontSize:12,color:"#8b6040",background:"#f0e0d0",padding:"3px 8px",borderRadius:6}}>auto:{autoSuggest[s.sku]}</span>}
+              </div>
+            </div>
+          </div>;
+        })}
+      </div>
+
+      {totalPaller>0&&<div className="card" style={{marginTop:16}}>
+        <div style={{padding:"14px 20px",borderBottom:"1px solid #ede4d6",fontSize:15,fontWeight:700}}>Bestillingsoversigt til Mario</div>
+        {STONES.filter(s=>(newOrder[s.sku]||0)>0).map(s=>
+          <div key={s.sku} style={{padding:"12px 20px",borderBottom:"1px solid #f0e8de",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <span style={{color:"#6a5a40",fontSize:14}}>{s.name} — 2/4 mm, 25 kg</span>
+            <span style={{fontWeight:700,fontSize:15}}>{newOrder[s.sku]} pal · {newOrder[s.sku]*PALLES} ps</span>
+          </div>
+        )}
+        <div style={{padding:"14px 20px",display:"flex",justifyContent:"space-between",fontWeight:700,fontSize:15}}>
+          <span style={{color:"#a09070"}}>Total</span>
+          <span>{totalPaller} paller · {totalPaller*PALLES*25/1000} tons · Ex Works</span>
+        </div>
+      </div>}
+    </div>}
+
+    {/* ── PÅ VEJ ── */}
+    {tab==="orders" && <div>
+      {activeOrders.length===0
+        ? <div style={{textAlign:"center",padding:"60px 20px",color:"#a09070"}}><div style={{fontSize:40,marginBottom:12}}>✓</div><div style={{fontWeight:600,fontSize:18}}>Ingen ordrer på vej</div></div>
+        : activeOrders.map(o=>{
+          const totalPoser=o.lines.reduce((a,l)=>a+l.poser,0);
+          const daysTo=o.etaWarehouse?Math.round((new Date(o.etaWarehouse)-new Date())/86400000):null;
+          const sc=o.status==="bekræftet"?"#16a34a":o.status==="afventer"?"#d97706":"#7c5230";
+          const maxP=Math.max(...o.lines.map(l=>l.poser));
+          return <div key={o.ref} className="card" style={{marginBottom:14}}>
+            <div style={{padding:"16px 20px",borderBottom:"1px solid #ede4d6"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
+                <div style={{display:"flex",alignItems:"center",gap:12}}>
+                  <span style={{fontSize:20,fontWeight:800}}>{o.ref}</span>
+                  <span className="badge" style={{background:sc+"20",color:sc,textTransform:"uppercase",letterSpacing:0.5}}>{o.status}</span>
+                </div>
+                <span style={{fontSize:14,color:"#a09070",fontWeight:600}}>{totalPoser/PALLES} paller · {totalPoser*25/1000}t</span>
+              </div>
+              <div style={{fontSize:13,color:"#8a7060",marginBottom:o.etaWarehouse?6:0}}>
+                Bestilt {fmt(o.sent)} · Klar hos Bellamoli: {o.etaFactory
+                  ?<strong style={{color:"#8b6040"}}> {fmt(o.etaFactory)}</strong>
+                  :<span style={{color:"#d97706"}}> afventer bekræftelse</span>}
+              </div>
+              {o.etaWarehouse&&<div style={{fontSize:15,fontWeight:700,color:daysTo<=7?"#16a34a":daysTo<=14?"#d97706":"#7c5230"}}>
+                På lager {fmt(o.etaWarehouse)} {daysTo!==null&&`· om ${daysTo} dage`}
+              </div>}
+            </div>
+            <div>
+              {o.lines.map((line,i)=>{
+                const st=STONES.find(s=>s.name===line.name);
+                return <div key={i} style={{padding:"12px 20px",borderBottom:i<o.lines.length-1?"1px solid #f0e8de":"none",display:"flex",alignItems:"center",gap:12}}>
+                  <div style={{width:11,height:11,borderRadius:3,background:st?.color||"#888",border:"1px solid rgba(0,0,0,0.1)",flexShrink:0}}/>
+                  <span style={{fontSize:14,fontWeight:600,minWidth:130}}>{line.name}</span>
+                  <div className="bar-wrap" style={{flex:1}}>
+                    <div className="bar-fill" style={{width:`${(line.poser/maxP)*100}%`,background:"linear-gradient(90deg,#8b6040,#c8906a)"}}/>
+                  </div>
+                  <span style={{fontSize:13,color:"#6a5a40",fontWeight:600,minWidth:100,textAlign:"right"}}>{line.poser/PALLES} pal · {line.poser} ps</span>
+                </div>;
+              })}
+            </div>
+          </div>;
+        })
+      }
+    </div>}
+
+    {/* ── ROKO ── */}
+    {tab==="roko" && <div>
+      {(() => {
+        const k=[...rokoComputed].sort((a,b)=>a.bestilDage-b.bestilDage)[0];
+        const c=k.haster==="nu"?"#dc2626":k.haster==="snart"?"#ea580c":"#d97706";
+        if(k.bestilDage>21) return <div style={{background:"#f0faf0",border:"1px solid #bbdebb",borderRadius:14,padding:"16px 20px",marginBottom:16}}>
+          <div style={{fontSize:11,textTransform:"uppercase",letterSpacing:1.5,color:"#16a34a",fontWeight:700,marginBottom:4}}>ROKO Status</div>
+          <div style={{fontSize:20,fontWeight:800,marginBottom:4}}>Næste bestilling ca. {k.bestilDato}</div>
+          <div style={{fontSize:14,color:"#6a8060"}}>Styres af {k.name}</div>
+        </div>;
+        return <div style={{background:"#fff8f0",border:`1px solid ${c}80`,borderRadius:14,padding:"16px 20px",marginBottom:16}}>
+          <div style={{fontSize:11,textTransform:"uppercase",letterSpacing:1.5,color:c,fontWeight:700,marginBottom:4}}>Næste bestillingspunkt</div>
+          <div style={{fontSize:20,fontWeight:800,marginBottom:4}}>{k.bestilDage<=0?"⚠️ Bestil nu":`Bestil inden ${k.bestilDato}`}</div>
+          <div style={{fontSize:14,color:"#8a7060"}}>Styres af {k.name}</div>
+        </div>;
+      })()}
+
+      <div className="stone-grid">
+        {[...rokoComputed].sort((a,b)=>b.salg3-a.salg3).map(p=>
+          <div key={p.sku} className="card">
+            <div className="card-pad">
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
+                <div style={{display:"flex",alignItems:"center",gap:10}}>
+                  <div style={{width:13,height:13,borderRadius:4,background:p.color,border:"1px solid rgba(0,0,0,0.1)"}}/>
+                  <div>
+                    <div style={{fontWeight:700,fontSize:16}}>{p.name}</div>
+                    <div style={{fontSize:11,color:"#a09070"}}>{p.sku}</div>
+                  </div>
+                </div>
+                <span style={{fontSize:13,fontWeight:700,color:hasterColor[p.haster],background:hasterColor[p.haster]+"15",padding:"3px 10px",borderRadius:8}}>{p.bestilDato}</span>
+              </div>
+              <div className="stat-grid">
+                {[["Lager",p.salgsbare],["På vej",p.paavej>0?"+"+p.paavej:"—"],["1 mdr",p.salg1],["3 mdr",p.salg3]].map(([l,v])=>
+                  <div key={l} className="stat-box">
+                    <div className="label">{l}</div>
+                    <div className="stat-val" style={{color:l==="På vej"&&p.paavej>0?"#8b6040":"#2c2010"}}>{v}</div>
+                  </div>
+                )}
+              </div>
+              <div style={{display:"flex",alignItems:"center",gap:12,marginTop:8}}>
+                <DækBar value={p.dækning}/>
+                <span style={{fontSize:14,fontWeight:700,color:dækColor(p.dækning),minWidth:60,textAlign:"right"}}>{p.dækning.toFixed(1)} mdr</span>
+              </div>
+              {p.bestilAntal>0&&<div style={{marginTop:10,background:"#f5ede0",borderRadius:10,padding:"10px 14px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <span style={{fontSize:13,color:"#8a7060"}}>Foreslå bestilling</span>
+                <span style={{fontSize:16,fontWeight:700,color:"#8b6040"}}>{p.bestilAntal} stk</span>
+              </div>}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>}
+
+    {/* SCAN */}
+    {tab==="scan" && <div>
+      <div className="card" style={{marginBottom:16}}>
+        <div className="card-pad">
+          <div style={{fontSize:20,fontWeight:800,marginBottom:6}}>📷 Scan lagerstatus</div>
+          <div style={{fontSize:14,color:"#8a7060",marginBottom:16}}>Upload et screenshot fra dit WMS — Claude læser tallene automatisk og opdaterer appen.</div>
+
+          {scanState==="idle" && <label style={{display:"block",border:"2px dashed #d8ccc0",borderRadius:12,padding:"32px 20px",textAlign:"center",cursor:"pointer",background:"#f5ede0"}}>
+            <div style={{fontSize:32,marginBottom:8}}>📂</div>
+            <div style={{fontWeight:600,color:"#6a5a40",marginBottom:4}}>Klik for at vælge screenshot</div>
+            <div style={{fontSize:12,color:"#a09070"}}>PNG, JPG eller WEBP</div>
+            <input type="file" accept="image/*" style={{display:"none"}} onChange={e=>e.target.files[0]&&scanScreenshot(e.target.files[0])}/>
+          </label>}
+
+          {scanState==="scanning" && <div style={{textAlign:"center",padding:"40px 20px"}}>
+            <div style={{fontSize:32,marginBottom:12}}>⏳</div>
+            <div style={{fontWeight:600,fontSize:16}}>Læser screenshot...</div>
+            <div style={{fontSize:13,color:"#a09070",marginTop:4}}>Claude analyserer tallene</div>
+          </div>}
+
+          {scanState==="error" && <div>
+            <div style={{background:"#fef2f2",border:"1px solid #fca5a5",borderRadius:10,padding:"14px 16px",marginBottom:12,color:"#dc2626"}}>{scanError}</div>
+            <button className="btn btn-secondary" onClick={()=>setScanState("idle")}>Prøv igen</button>
+          </div>}
+
+          {scanState==="preview" && scanResult && <div>
+            <div style={{background:"#f0faf0",border:"1px solid #bbdebb",borderRadius:10,padding:"12px 16px",marginBottom:14}}>
+              <div style={{fontWeight:700,color:"#16a34a",marginBottom:2}}>✓ Screenshot læst</div>
+              <div style={{fontSize:13,color:"#6a8060"}}>Genkendt dato: {scanResult.dato || "ukendt"}</div>
+            </div>
+            <div style={{marginBottom:14}}>
+              {Object.entries(scanResult.sten||{}).map(([sku,vals])=>{
+                const stone = STONES.find(s=>s.sku===sku);
+                if (!stone) return null;
+                return <div key={sku} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderBottom:"1px solid #ede4d6",fontSize:14}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8}}>
+                    <div style={{width:10,height:10,borderRadius:2,background:stone.color}}/>
+                    <span style={{fontWeight:600}}>{stone.name}</span>
+                  </div>
+                  <div style={{display:"flex",gap:12,fontSize:12,color:"#8a7060"}}>
+                    <span>Lager: <strong style={{color:"#2c2010"}}>{vals.lager}</strong></span>
+                    <span>På vej: <strong style={{color:"#8b6040"}}>{vals.paavej}</strong></span>
+                    <span>1 mdr: <strong style={{color:"#2c2010"}}>{vals.salg1}</strong></span>
+                    <span>3 mdr: <strong style={{color:"#2c2010"}}>{vals.salg3}</strong></span>
+                  </div>
+                </div>;
+              })}
+            </div>
+            <div style={{display:"flex",gap:10}}>
+              <button className="btn btn-secondary" style={{flex:1}} onClick={()=>{setScanState("idle");setScanResult(null);}}>Annuller</button>
+              <button className="btn btn-primary" style={{flex:2}} onClick={applyScan}>✓ Opdater lagerdata</button>
+            </div>
+          </div>}
+        </div>
+      </div>
+    </div>}
+
+    </div>
+  </div>;
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
